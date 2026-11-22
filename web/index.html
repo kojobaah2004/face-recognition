@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Facial Recognition System</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #111; color: #fff; text-align: center; padding: 20px; }
+    .stage { position: relative; display: inline-block; margin-top: 15px; }
+    video, canvas { border-radius: 10px; max-width: 100%; }
+    canvas { position: absolute; left: 0; top: 0; }
+    button { padding: 12px 24px; font-size: 16px; border: none; border-radius: 8px; background: #00c853; color: #fff; cursor: pointer; margin: 5px; }
+    button:hover { background: #00a844; }
+    #status { margin-top: 12px; font-size: 18px; color: #00e676; }
+  </style>
+</head>
+<body>
+  <h2>Facial Recognition Portal</h2>
+  <div>
+    <button onclick="scanFace()">Detect Face Now</button>
+    <button onclick="toggleAuto()">Toggle Live Auto-Scan</button>
+  </div>
+  <div id="status">Ready</div>
+  <div class="stage">
+    <video id="video" width="640" height="480" autoplay playsinline></video>
+    <canvas id="overlay" width="640" height="480"></canvas>
+  </div>
+
+  <script>
+    const API_URL = "https://asia-guests-arms-violin.trycloudflare.com";
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("overlay");
+    const ctx = canvas.getContext("2d");
+    const statusText = document.getElementById("status");
+    let autoInterval = null;
+
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => { video.srcObject = stream; })
+      .catch(() => { statusText.innerText = "Camera access denied or unavailable."; });
+
+    async function scanFace() {
+      if (!video.videoWidth || !video.videoHeight) return;
+
+      const tempCanvas = document.createElement("canvas");
+      tempCanvas.width = video.videoWidth;
+      tempCanvas.height = video.videoHeight;
+      tempCanvas.getContext("2d").drawImage(video, 0, 0);
+
+      tempCanvas.toBlob(async (blob) => {
+        if (!blob) return;
+        const formData = new FormData();
+        formData.append("file", blob, "frame.jpg");
+
+        try {
+          const res = await fetch(API_URL, { method: "POST", body: formData });
+          const data = await res.json();
+          drawBoxes(data.detections || []);
+        } catch (err) {
+          statusText.innerText = "Error reaching server. Check that your Colab tunnel cell is still running.";
+        }
+      }, "image/jpeg");
+    }
+
+    function drawBoxes(detections) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!detections.length) {
+  statusText.innerText = "Wrong person detected";
+  return;
+}
+
+      statusText.innerText = detections
+        .map(d => `${d.label} (${Math.round(d.confidence * 100)}%)`)
+        .join(" | ");
+
+      detections.forEach(d => {
+        const [x1, y1, x2, y2] = d.bbox;
+        ctx.strokeStyle = "#00e676";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+
+        ctx.fillStyle = "#00e676";
+        ctx.font = "bold 18px Arial";
+        ctx.fillText(
+          `${d.label} ${Math.round(d.confidence * 100)}%`,
+          x1,
+          y1 > 24 ? y1 - 8 : y1 + 22
+        );
+      });
+    }
+
+    function toggleAuto() {
+      if (autoInterval) {
+        clearInterval(autoInterval);
+        autoInterval = null;
+        statusText.innerText = "Auto-scan stopped";
+      } else {
+        scanFace();
+        autoInterval = setInterval(scanFace, 1200);
+        statusText.innerText = "Live auto-scan running...";
+      }
+    }
+  </script>
+</body>
+</html>
